@@ -93,7 +93,7 @@
   </dl>
 </div>
 
-<div id="hint">Drag to orbit &middot; scroll to zoom &middot; click a slot</div>
+<div id="hint">Drag to orbit &middot; scroll to zoom &middot; click a bay</div>
 
 <script src="lib/three.min.js"></script>
 <script src="lib/GLTFLoader.js"></script>
@@ -602,7 +602,7 @@ function highlight(mesh){
 }
 function showInfo(s){
   const p=document.getElementById('info'); p.style.display='block';
-  document.getElementById('iSlot').textContent='Slot '+s.slot_id;
+  document.getElementById('iSlot').textContent='Bay '+s.slot_id;
   const tag=document.getElementById('iTag');
   tag.textContent=STATUS_LABEL[s.status]||s.status;
   tag.style.background='#'+(STATUS_COLORS[s.status]??STATUS_COLORS.vacant).toString(16).padStart(6,'0');
@@ -669,9 +669,9 @@ bcs.onclick=()=>setColourMode('status'); bcc.onclick=()=>setColourMode('class');
 // ---------------- view toggle ----------------
 const b3=document.getElementById('btn3d'), bp=document.getElementById('btnPlan');
 b3.onclick=()=>{planMode=false;b3.classList.add('active');bp.classList.remove('active');
-  document.getElementById('hint').textContent='Drag to orbit · scroll to zoom · click a slot';setLayout(false);applyCamera();};
+  document.getElementById('hint').textContent='Drag to orbit · scroll to zoom · click a bay';setLayout(false);applyCamera();};
 bp.onclick=()=>{planMode=true;bp.classList.add('active');b3.classList.remove('active');
-  document.getElementById('hint').textContent='Top-down plan · tiers split · drag to pan · click a slot';setLayout(true);applyCamera();};
+  document.getElementById('hint').textContent='Top-down plan · tiers split · drag to pan · click a bay';setLayout(true);applyCamera();};
 document.getElementById('btnReset').onclick=()=>{
   target.set(0,1.5,0); theta=VIEW0.theta; phi=VIEW0.phi; radius=VIEW0.radius; applyCamera();};
 
