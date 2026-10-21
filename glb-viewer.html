@@ -1,0 +1,31 @@
+<!doctype html><html><head><meta charset="utf-8"><title>GLB viewer</title>
+<style>html,body{margin:0;height:100%;background:#131c26}</style>
+<script type="importmap">{"imports":{
+ "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+ "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head><body>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+const url = new URLSearchParams(location.search).get('m') || 'models/sabre.glb';
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x131c26);
+const cam=new THREE.PerspectiveCamera(42,innerWidth/innerHeight,0.01,100);
+const rnd=new THREE.WebGLRenderer({antialias:true}); rnd.setPixelRatio(devicePixelRatio);
+rnd.setSize(innerWidth,innerHeight); document.body.appendChild(rnd.domElement);
+scene.add(new THREE.HemisphereLight(0xcfe0f0,0x30404c,1.0));
+const d=new THREE.DirectionalLight(0xffffff,1.1); d.position.set(3,5,2); scene.add(d);
+const grid=new THREE.GridHelper(6,24,0x3a4a58,0x24303a); scene.add(grid);
+const ctl=new OrbitControls(cam,rnd.domElement); ctl.autoRotate=true; ctl.autoRotateSpeed=1.4;
+new GLTFLoader().load(url,g=>{
+  const m=g.scene;
+  m.traverse(o=>{ if(o.isMesh){ o.material.side=THREE.DoubleSide; o.material.metalness=.05; o.material.roughness=.7; }});
+  const box=new THREE.Box3().setFromObject(m); const s=box.getSize(new THREE.Vector3()); const c=box.getCenter(new THREE.Vector3());
+  m.position.sub(c); scene.add(m);
+  const r=Math.max(s.x,s.y,s.z); cam.position.set(r*0.55,r*0.20,r*0.70); ctl.target.set(0,0,0); ctl.update();
+  grid.position.y=-s.y/2;
+  window.__loaded=true;
+}, undefined, e=>{ document.body.innerHTML='<p style="color:#f88;font:16px sans-serif">Load error: '+e+'</p>'; });
+addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();rnd.setSize(innerWidth,innerHeight);});
+(function loop(){requestAnimationFrame(loop);ctl.update();rnd.render(scene,cam);})();
+</script></body></html>

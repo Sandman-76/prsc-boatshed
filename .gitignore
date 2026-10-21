@@ -1,0 +1,11 @@
+# Real member data must NEVER be committed — it lives only in the Google Sheet.
+# (The committed slots.csv is an anonymised template; real data is kept outside this repo.)
+_real-*.csv
+*-real-*.csv
+*.local.csv
+my-*.csv
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp

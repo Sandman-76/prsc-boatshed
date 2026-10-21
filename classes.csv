@@ -1,0 +1,11 @@
+class,display_name,colour,notes
+Sabre,Sabre,#4e79a7,
+Pacer,Pacer,#f28e2b,
+Laser,Laser (ILCA),#e15759,
+Optimist,Optimist,#76b7b2,
+Fireball,Fireball,#59a14f,
+Impulse,Impulse,#edc948,
+Heron,Heron,#b07aa1,
+Mirror,Mirror,#ff9da7,
+Sabot,Sabot,#9c755f,
+Other,Other,#8a8f98,Default shape/colour for anything not matching a known class

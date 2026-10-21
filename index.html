@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PRSC Boat Shed</title>
+<style>
+  :root{
+    --bg:#0f1720; --panel:rgba(20,30,42,.92); --ink:#e8eef4; --muted:#9fb0c0;
+    --line:#2b3d4f; --accent:#3a86ff;
+    --occupied:#2e9e4f; --vacant:#7a8a99; --overdue:#d14b4b; --reserved:#e0a52e;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:14px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;overflow:hidden}
+  #app{position:fixed;inset:0}
+  canvas{display:block}
+  .panel{position:absolute;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;padding:12px 14px;backdrop-filter:blur(6px);box-shadow:0 6px 24px rgba(0,0,0,.35)}
+  #title{top:14px;left:14px;max-width:320px}
+  #title h1{margin:0 0 2px;font-size:16px;letter-spacing:.2px}
+  #title .sub{color:var(--muted);font-size:12px}
+  #controls{top:14px;right:14px;display:flex;flex-direction:column;gap:8px;align-items:stretch}
+  .row{display:flex;gap:6px}
+  button{font:inherit;color:var(--ink);background:#1b2838;border:1px solid var(--line);
+    border-radius:8px;padding:7px 10px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  label.file{font:inherit;color:var(--ink);background:#1b2838;border:1px solid var(--line);
+    border-radius:8px;padding:7px 10px;cursor:pointer;text-align:center}
+  label.file:hover{border-color:var(--accent)}
+  input[type=file]{display:none}
+  #legend{bottom:14px;left:14px}
+  #legend .item{display:flex;align-items:center;gap:8px;margin:3px 0}
+  .sw{width:14px;height:14px;border-radius:3px;border:1px solid rgba(255,255,255,.25)}
+  #counts{display:flex;gap:14px;margin-top:8px;color:var(--muted);font-size:12px;flex-wrap:wrap}
+  #counts b{color:var(--ink)}
+  #info{bottom:14px;right:14px;width:260px;display:none}
+  #info h2{margin:0 0 6px;font-size:15px;display:flex;justify-content:space-between;align-items:center}
+  #info .tag{font-size:11px;padding:2px 8px;border-radius:999px;color:#06121c;font-weight:700}
+  #info dl{margin:6px 0 0;display:grid;grid-template-columns:auto 1fr;gap:3px 10px}
+  #info dt{color:var(--muted)}
+  #info .close{position:absolute;top:8px;right:10px;cursor:pointer;color:var(--muted);border:none;background:none;font-size:18px;padding:0}
+  #hint{bottom:14px;left:50%;transform:translateX(-50%);color:var(--muted);font-size:12px;
+    background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 14px;pointer-events:none}
+  @media (max-width:640px){
+    #info{width:auto;left:14px;right:14px}
+    #title{max-width:none;right:14px}
+    #controls{top:auto;bottom:120px}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="title" class="panel">
+  <h1>Port River Sailing Club</h1>
+  <div class="sub">Member boat storage shed &middot; <span id="dimLabel"></span></div>
+</div>
+
+<div id="controls" class="panel">
+  <div class="row">
+    <button id="btn3d" class="active">3D view</button>
+    <button id="btnPlan">Plan view</button>
+  </div>
+  <div class="row">
+    <span style="align-self:center;color:var(--muted);font-size:12px;padding-right:2px">Colour</span>
+    <button id="btnColStatus" class="active" style="flex:1">Status</button>
+    <button id="btnColClass" style="flex:1">Class</button>
+  </div>
+  <div class="row">
+    <button id="btnReset" style="flex:1">Reset camera</button>
+  </div>
+  <label class="file">Load slots.csv<input id="csv" type="file" accept=".csv"></label>
+  <label class="file">Load classes.csv<input id="classcsv" type="file" accept=".csv"></label>
+</div>
+
+<div id="legend" class="panel">
+  <div id="legendItems"></div>
+  <div id="counts"></div>
+</div>
+
+<div id="info" class="panel">
+  <button class="close" id="infoClose">&times;</button>
+  <h2><span id="iSlot"></span><span class="tag" id="iTag"></span></h2>
+  <dl>
+    <dt>Owner</dt><dd id="iOwner"></dd>
+    <dt>Boat</dt><dd id="iBoat"></dd>
+    <dt>Class</dt><dd id="iClass"></dd>
+    <dt>No.</dt><dd id="iNo"></dd>
+    <dt>Racing</dt><dd id="iRacing"></dd>
+    <dt>Notes</dt><dd id="iNotes"></dd>
+  </dl>
+</div>
+
+<div id="hint">Drag to orbit &middot; scroll to zoom &middot; click a slot</div>
+
+<script src="lib/three.min.js"></script>
+<script src="lib/GLTFLoader.js"></script>
+<script src="sample-data.js"></script>
+<script src="models.js"></script>   <!-- GLB hulls embedded as base64 so they work on file:// (double-click) -->
+<script>
+// ------------------------------------------------------------------
+// CONFIG — building dimensions (metres). Edit these to match reality.
+// Measured footprint from Google Maps 2D building layer: 23.5 x 15.4 m
+// ------------------------------------------------------------------
+const DIMS = {
+  length: 23.5,      // X axis, along the row of bays
+  width:  15.4,      // Z axis, wall-to-wall
+  eave:   3.8,       // wall height to eaves (roller door ~3 m in street view)
+  ridge:  4.6,       // height to roof ridge (low-pitch roof)
+  bays:   8,         // storage bays along the length (per side)
+  margin: 0.6,       // gap from end wall to first bay
+  boatLen:4.2,       // slot depth (bow-in, toward aisle)
+  boatBeam:2.2,      // slot width along the length
+  boatH:  0.55,      // visual boat height
+  tierLowerY: 0.28,  // centre height of lower-tier boats (hull resting on the floor)
+  tierUpperY: 2.35   // centre height of upper-tier boats (on the rack shelf)
+};
+const STATUS_COLORS = {paid:0x2e9e4f, club:0x3a86ff, unknown:0xe0a52e, vacant:0x7a8a99, na:0xe8b800};
+const STATUS_LABEL  = {paid:'Paid', club:'Club boat', unknown:'Unknown', vacant:'Vacant', na:'Not available'};
+const EFF_CLASS = s => (s.boat_class && s.boat_class.trim()) ? s.boat_class.trim() : 'Other';
+
+// --- Class metadata (display name + display colour); overridden by classes.csv when loaded ---
+let CLASS_META = {
+  sabre:{display_name:'Sabre',colour:0x4e79a7},         pacer:{display_name:'Pacer',colour:0xf28e2b},
+  laser:{display_name:'Laser (ILCA)',colour:0xe15759},  optimist:{display_name:'Optimist',colour:0x76b7b2},
+  fireball:{display_name:'Fireball',colour:0x59a14f},   impulse:{display_name:'Impulse',colour:0xedc948},
+  heron:{display_name:'Heron',colour:0xb07aa1},         mirror:{display_name:'Mirror',colour:0xff9da7},
+  sabot:{display_name:'Sabot',colour:0x9c755f},         other:{display_name:'Other',colour:0x8a8f98}
+};
+const classMeta = c => CLASS_META[(c||'').trim().toLowerCase()];
+function hexColour(s){ s=(s||'').trim().replace(/^#/,''); const n=parseInt(s,16); return (s.length>=3 && !isNaN(n))?n:null; }
+let COLOUR_MODE='status';   // 'status' | 'class'
+function slotColour(s){
+  if(COLOUR_MODE==='class'){ const m=classMeta(EFF_CLASS(s)); return (m && m.colour!=null)?m.colour:0x7a8a99; }
+  return STATUS_COLORS[(s.status||'').toLowerCase()] ?? STATUS_COLORS.vacant;
+}
+// slot number -> rack/pos (inverse of the club numbering; odd=lower tier, even=upper)
+function slotToRackPos(num){ num=+num; const odd=num%2===1;
+  if(num<=10) return {rack:1, pos:(odd?(11-num):(12-num))/2};
+  if(num<=20) return {rack:2, pos:(odd?(21-num):(22-num))/2};
+  return        {rack:3, pos:(odd?(num-19):(num-20))/2};
+}
+// diagonal yellow/black hazard stripes for bays made unavailable by the current rack config (status NA)
+let _hazardTex=null;
+function hazardTexture(){
+  if(_hazardTex) return _hazardTex;
+  // Seamless 45° tile: colour by (x+y)%period, with period dividing N so the diagonal wraps cleanly.
+  const N=64, period=16;
+  const c=document.createElement('canvas'); c.width=c.height=N; const g=c.getContext('2d');
+  const img=g.createImageData(N,N), d=img.data, Y=[232,184,0], K=[38,38,38];
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++){
+    const col=((x+y)%period)<period/2 ? Y : K, k=(y*N+x)*4;
+    d[k]=col[0]; d[k+1]=col[1]; d[k+2]=col[2]; d[k+3]=255;
+  }
+  g.putImageData(img,0,0);
+  _hazardTex=new THREE.CanvasTexture(c);
+  _hazardTex.wrapS=_hazardTex.wrapT=THREE.RepeatWrapping;
+  // one tile ≈ 1 world metre in each direction -> square (true 45°) stripes that line up across the pad
+  _hazardTex.repeat.set(DIMS.boatBeam*0.95, DIMS.boatLen*0.9);
+  return _hazardTex;
+}
+
+// Real dinghy dimensions (metres). blunt = pram bow (Optimist).
+const CLASS_DIMS = {
+  'Sabre':   {L:3.82, B:1.12, blunt:false},
+  'Heron':   {L:3.43, B:1.37, blunt:false},
+  'Pacer':   {L:3.20, B:1.42, blunt:false},
+  'Opti':    {L:2.31, B:1.13, blunt:true},
+  'Optimist':{L:2.31, B:1.13, blunt:true},
+  'Laser':   {L:4.06, B:1.39, blunt:false},
+  'Mirror':  {L:3.30, B:1.39, blunt:true},
+  'Sabot':   {L:2.36, B:1.17, blunt:true}
+};
+const classDims = c => CLASS_DIMS[c] || {L:3.4, B:1.35, blunt:false};
+
+// Procedural low-poly dinghy hull, length along +Z (bow at +Z).
+function makeHull(cls, color, opacity){
+  const {L,B,blunt} = classDims(cls);
+  const wsPoint=[0.70,0.92,1.00,0.99,0.90,0.74,0.50,0.26,0.00]; // pointed bow
+  const wsPram =[0.78,0.94,1.00,1.00,0.96,0.86,0.72,0.55,0.40]; // pram bow
+  const ds     =[0.30,0.70,0.95,1.00,0.98,0.86,0.66,0.42,0.18]; // keel depth
+  const ws = blunt ? wsPram : wsPoint;
+  const depth = Math.max(0.26, B*0.32), n = ws.length;
+  const pos=[]; const push=(a)=>pos.push(a[0],a[1],a[2]);
+  const P = i => { const z=-L/2 + L*(i/(n-1)); return {z, hb:(B/2)*ws[i], d:depth*ds[i]}; };
+  for(let i=0;i<n-1;i++){
+    const a=P(i), b=P(i+1);
+    const aL=[a.hb,0,a.z], aR=[-a.hb,0,a.z], aK=[0,-a.d,a.z];
+    const bL=[b.hb,0,b.z], bR=[-b.hb,0,b.z], bK=[0,-b.d,b.z];
+    push(aL);push(aK);push(bL);  push(aK);push(bK);push(bL);   // left hull
+    push(aR);push(bR);push(aK);  push(aK);push(bR);push(bK);   // right hull
+    push(aL);push(bL);push(aR);  push(aR);push(bL);push(bR);   // deck
+  }
+  const s=P(0); push([s.hb,0,s.z]);push([0,-s.d,s.z]);push([-s.hb,0,s.z]); // transom
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  g.computeVertexNormals();
+  return new THREE.Mesh(g, new THREE.MeshStandardMaterial(
+    {color, emissive:color, emissiveIntensity:0.28, opacity, transparent:opacity<1, metalness:.1, roughness:.6, side:THREE.DoubleSide}));
+}
+
+// Real hull GLBs per class (fall back to procedural makeHull when absent).
+const CLASS_GLB = {Sabre:'models/sabre.glb', Pacer:'models/pacer.glb', Laser:'models/laser.glb',
+                   Opti:'models/opti.glb', Optimist:'models/opti.glb',
+                   Fireball:'models/fireball.glb', Impulse:'models/impulse.glb'};
+const _glbCache = {};
+function loadGLB(url){
+  if(!_glbCache[url]){
+    // prefer the embedded base64 (works on file://); fall back to fetching the file over http
+    const src=(window.MODEL_B64 && window.MODEL_B64[url]) ? ('data:model/gltf-binary;base64,'+window.MODEL_B64[url]) : url;
+    _glbCache[url]=new Promise((res,rej)=>
+      new THREE.GLTFLoader().load(src, g=>res(g.scene), undefined, rej));
+  }
+  return _glbCache[url];
+}
+// Each GLB was modelled facing its own way: most have the bow at +X, but Sabre and Fireball
+// have it at -X, so they need a 180° flip for attachHull's rotation to point every bow out.
+const GLB_BOW_FLIP = {sabre:true, fireball:true};
+const bowFlip = cls => (GLB_BOW_FLIP[(cls||'').trim().toLowerCase()] ? Math.PI : 0);
+
+// Load a class GLB, recolour by status, orient bow-out, fit the slot, add under `proxy`.
+function attachHull(proxy, cls, color, rotY, rotYproc){
+  loadGLB(CLASS_GLB[cls]).then(scene=>{
+    const obj=scene.clone(true);
+    obj.traverse(o=>{ if(o.isMesh){
+      if(!o.geometry.attributes.normal) o.geometry.computeVertexNormals();  // decimated parts lose normals -> relight
+      o.material=new THREE.MeshStandardMaterial({color, emissive:color, emissiveIntensity:0.28, metalness:.1, roughness:.65, side:THREE.DoubleSide});
+      o.castShadow=true; o.receiveShadow=true;
+    }});
+    const box=new THREE.Box3().setFromObject(obj);
+    const c=box.getCenter(new THREE.Vector3()), sz=box.getSize(new THREE.Vector3());
+    obj.position.sub(c);                                  // centre on origin
+    const g=new THREE.Group(); g.add(obj);
+    g.rotation.y = ((rotY===undefined) ? -Math.PI/2 : rotY) + bowFlip(cls); // orient bow per its rack (+ per-class native-bow fix)
+    const want=DIMS.boatLen*0.95;
+    g.scale.setScalar(Math.min(1, want/Math.max(sz.x,0.1))); // shrink only if longer than the slot
+    proxy.add(g);
+  }).catch(()=>{
+    // GLB couldn't load at all -> draw a procedural hull so the boat still appears
+    const h=makeHull(cls, color, 0.97); h.rotation.y=(rotYproc===undefined?rotY:rotYproc); proxy.add(h);
+  });
+}
+
+document.getElementById('dimLabel').textContent = DIMS.length+' × '+DIMS.width+' m';
+
+// ---------------- three.js scene ----------------
+const app = document.getElementById('app');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0f1720);
+scene.fog = new THREE.Fog(0x0f1720, 45, 95);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = false;   // schematic model: directional shading only, no cast-shadow blobs
+app.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xbfd3e6, 0x202a33, 0.9));
+const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+sun.position.set(18, 30, 12); sun.castShadow = true;
+sun.shadow.mapSize.set(2048,2048);
+const d=22; Object.assign(sun.shadow.camera,{left:-d,right:d,top:d,bottom:-d,near:1,far:90});
+scene.add(sun);
+
+// ground
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(120,120),
+  new THREE.MeshStandardMaterial({color:0x16202b}));
+ground.rotation.x = -Math.PI/2; ground.position.y = -0.01; ground.receiveShadow = true;
+scene.add(ground);
+
+// ---------------- building shell ----------------
+const shell = new THREE.Group(); scene.add(shell);
+(function buildShell(){
+  const {length:L,width:W,eave:E,ridge:R} = DIMS;
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(L,W),
+    new THREE.MeshStandardMaterial({color:0x2a3744}));
+  floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; shell.add(floor);
+
+
+  const wallMat = new THREE.MeshStandardMaterial({color:0x8fa6b8, transparent:true,
+    opacity:0.14, side:THREE.DoubleSide});
+  // walls as thin boxes (long walls + end walls up to eave)
+  function wall(w,h,x,z,ry){
+    const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,0.08),wallMat);
+    m.position.set(x,h/2,z); m.rotation.y=ry; shell.add(m);
+  }
+  wall(L,E, 0,-W/2,0); wall(L,E, 0, W/2,0);
+  wall(W,E,-L/2,0,Math.PI/2); wall(W,E, L/2,0,Math.PI/2);
+
+  // gable roof (two slopes)
+  const slope = Math.hypot(W/2, R-E);
+  const roofMat=new THREE.MeshStandardMaterial({color:0x4a6073,transparent:true,opacity:0.5,side:THREE.DoubleSide});
+  window.ROOF_MAT=roofMat;   // faded by the render loop as the camera looks down, so boats read from above
+  for(const s of [-1,1]){
+    const r=new THREE.Mesh(new THREE.PlaneGeometry(L,slope),roofMat);
+    r.position.set(0,(E+R)/2, s*W/4);
+    r.rotation.x = -Math.PI/2 + s*Math.atan2(R-E, W/2);
+    r.rotation.order='ZYX';
+    shell.add(r);
+  }
+  // gable end triangles
+  for(const s of [-1,1]){
+    const sh=new THREE.Shape();
+    sh.moveTo(-W/2,E); sh.lineTo(W/2,E); sh.lineTo(0,R); sh.lineTo(-W/2,E);
+    const g=new THREE.ShapeGeometry(sh);
+    const m=new THREE.Mesh(g,wallMat);
+    m.position.set(s*L/2,0,0); m.rotation.y=Math.PI/2; shell.add(m);
+  }
+  // wireframe outline of the box for crispness
+  const box=new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(L,E,W)),
+    new THREE.LineBasicMaterial({color:0x5f7d94}));
+  box.position.y=E/2; shell.add(box);
+})();
+
+// --- Orientation aids: north arrow (rotates with the model) + the 2 roller doors ---
+// Convention: +X = North (shed long axis), +Z = East = road/George Robertson Dr side.
+(function buildOrientation(){
+  const {length:L,width:W}=DIMS;
+  // North arrow, flat on the ground just outside the marina (west) wall
+  const north=new THREE.Group();
+  const mat=new THREE.MeshStandardMaterial({color:0xd14b4b, metalness:.1, roughness:.6});
+  const shaft=new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.11,2.0,12), mat); shaft.rotation.z=-Math.PI/2;
+  const head=new THREE.Mesh(new THREE.ConeGeometry(0.38,0.95,18), mat); head.rotation.z=-Math.PI/2; head.position.x=1.45;
+  const nlab=labelSprite('N'); nlab.scale.set(1.0,0.5,1); nlab.position.set(2.5,0.5,0);
+  north.add(shaft,head,nlab);
+  north.position.set(-7.0, 0.06, W/2+2.0);  // open south-east floor, clear of the racks
+  shell.add(north);
+
+  // Two roller doors on the road-side (east, +Z) long wall
+  const doorMat=new THREE.MeshStandardMaterial({color:0x46545f, metalness:.2, roughness:.75, side:THREE.DoubleSide});
+  const ribMat =new THREE.MeshStandardMaterial({color:0x303a44});
+  function door(cx, w, h, label){
+    const g=new THREE.Group();
+    const panel=new THREE.Mesh(new THREE.BoxGeometry(w,h,0.1), doorMat); panel.position.y=h/2;
+    const edge=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(w,h,0.1)),
+      new THREE.LineBasicMaterial({color:0xcfe0f0})); edge.position.y=h/2;
+    g.add(panel,edge);
+    for(let yy=0.3; yy<h-0.1; yy+=0.5){
+      const rib=new THREE.Mesh(new THREE.BoxGeometry(w*0.95,0.05,0.13), ribMat); rib.position.set(0,yy,0.02); g.add(rib);
+    }
+    const lab=labelSprite(label); lab.scale.set(2.2,0.55,1); lab.position.set(0,h+0.5,0); g.add(lab);
+    g.position.set(cx, 0, W/2+0.06);
+    shell.add(g);
+  }
+  door( 1.50, 4.1, 3.2, 'Door 1');  // 4.1 m wide; N edge 8.2 m from north wall; main boat door
+  door(-9.24, 4.1, 3.2, 'Door 2');  // 4.1 m wide; 0.46 m off south wall; NOT for sailing boats
+})();
+
+// ---------------- slots ----------------
+const slotGroup = new THREE.Group(); scene.add(slotGroup);
+const slotMeshes = [];           // for raycasting
+let slotData = [];
+
+function labelSprite(text){
+  const c=document.createElement('canvas'); c.width=128; c.height=64;
+  const g=c.getContext('2d');
+  g.fillStyle='rgba(10,18,26,.85)'; g.fillRect(0,0,128,64);
+  g.strokeStyle='rgba(255,255,255,.3)'; g.strokeRect(1,1,126,62);
+  g.fillStyle='#fff'; g.font='bold 34px Segoe UI,Arial'; g.textAlign='center'; g.textBaseline='middle';
+  g.fillText(text,64,34);
+  const t=new THREE.CanvasTexture(c);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:t,depthTest:false}));
+  sp.scale.set(1.6,0.8,1);
+  return sp;
+}
+
+// LAYOUT: 3 "finger" racks run front-to-back (along Z, perpendicular to the road/door wall),
+// spaced along the shed length (X). Each rack is 2-tier. Boats bow toward the doors (+Z).
+// (Rack count / slots-per-rack are placeholders until the real photos confirm them.)
+// LAYOUT from the club's marked top-down plan (model axes: +X = North, +Z = East/road).
+//  R1 = rear rack along the NORTH wall, runs E-W (along Z)
+//  R2 = side rack along the WEST/marina wall, runs N-S (along X), northern half
+//  R3 = middle cross-rack, runs E-W (along Z)
+// axis = the rack's long direction; (x,z) = its centre; half = half its length; n = slots/tier.
+// axis = rack's long direction; (x,z) = centre; half = half the length along axis; n = slots/tier.
+// All racks are the SAME depth: boats sit across the depth (length perpendicular to the axis),
+// side by side along the rack, bows facing out.
+const RAIL_DEPTH=2.6;   // rail (shelf) depth in metres; boats are longer and overhang it
+// R1 1.2 m off the north wall, R2 1.2 m off the west wall (rail centre = wall ± 1.2 + depth/2).
+// Door 1 south edge at x=-0.55. R3 front(north) edge 1 m south of it (x=-1.55 -> centre -2.85).
+// R2 south edge inline with Door 1 south edge (centre = -0.55 + half = 4.20).
+const RACKS=[
+  {axis:'Z', x: 9.25, z: 1.70, half:5.00, n:5, bow:'-X'},  // R1 rear rack (north wall); slots 1-10  (unchanged)
+  {axis:'X', x: 3.70, z:-5.20, half:4.25, n:5, bow:'+Z'},  // R2 west rack: south edge=Door1 south (-0.55), north edge=R1 south (7.95); slots 11-20
+  {axis:'Z', x:-2.85, z: 1.35, half:5.35, n:6, bow:'+X'},  // R3 middle rack; slots 21-32
+];
+const NRACKS=RACKS.length;
+function slotPosition(rack, pos, tier){
+  const R=RACKS[rack-1], y=(tier==='upper')?DIMS.tierUpperY:DIMS.tierLowerY;
+  const t=-R.half + (pos-0.5)*(2*R.half/R.n);      // spaced along the rack axis
+  return (R.axis==='Z') ? {x:R.x, y, z:R.z+t} : {x:R.x+t, y, z:R.z};
+}
+// Plan view: offset the two tiers along the axis so both are visible (not stacked).
+function planPosition(rack, pos, tier){
+  const R=RACKS[rack-1], off=1.1*(tier==='upper'?1:-1);
+  const t=-R.half + (pos-0.5)*(2*R.half/R.n);
+  return (R.axis==='Z') ? {x:R.x, y:0.03, z:R.z+t+off} : {x:R.x+t+off, y:0.03, z:R.z};
+}
+// Y-rotation per rack's bow direction. [procedural hull (length +Z), GLB hull (length +X)].
+const BOW_ROT={ '+Z':[0,-Math.PI/2], '-Z':[Math.PI,Math.PI/2], '+X':[Math.PI/2,0], '-X':[-Math.PI/2,Math.PI] };
+function boatRot(rack, isGLB){ return BOW_ROT[RACKS[rack-1].bow][isGLB?1:0]; }
+
+function buildSlots(data){
+  slotMeshes.length=0;
+  while(slotGroup.children.length) slotGroup.remove(slotGroup.children[0]);
+  slotData = data;
+
+  // rack frames (steel): one per rack per tier, oriented along the rack axis, uniform depth
+  const rackMat=new THREE.MeshStandardMaterial({color:0x5b6b78,metalness:.4,roughness:.6});
+  for(let r=1;r<=NRACKS;r++){
+    const R=RACKS[r-1];
+    for(const tier of ['upper']){   // only the upper shelf is a platform; lower boats sit on the floor
+      const y=(tier==='upper'?DIMS.tierUpperY:DIMS.tierLowerY)-DIMS.boatH/2-0.05;
+      const geo = (R.axis==='Z')
+        ? new THREE.BoxGeometry(RAIL_DEPTH, 0.06, 2*R.half)   // depth 2.6 m in X, length in Z
+        : new THREE.BoxGeometry(2*R.half, 0.06, RAIL_DEPTH);  // length in X, depth 2.6 m in Z
+      const beam=new THREE.Mesh(geo,rackMat); beam.position.set(R.x,y,R.z);
+      beam.castShadow=true; beam.userData.isRack=true; slotGroup.add(beam);
+    }
+  }
+
+  for(const s of data){
+    const rack=+s.rack, pos=+s.pos;
+    const p3=slotPosition(rack, pos, s.tier);
+    const pp=planPosition(rack, pos, s.tier);
+    const rotY=boatRot(rack,false);
+    const col = slotColour(s);
+    const st=(s.status||'').toLowerCase();
+    const isNA = st==='na';
+    const occupied = !isNA && st!=='vacant' && st!=='';
+    const cls = EFF_CLASS(s);
+    let mesh;
+    if(occupied && CLASS_GLB[cls]){
+      mesh=new THREE.Mesh(new THREE.BoxGeometry(DIMS.boatBeam*0.9,0.7,DIMS.boatLen*0.85),
+        new THREE.MeshBasicMaterial({visible:false}));   // invisible container for the GLB hull
+      mesh.raycast=()=>{};   // don't let the invisible box catch clicks — pick the real hull geometry (its children)
+      attachHull(mesh, cls, col, boatRot(rack,true), rotY);  // real GLB hull, bow out (procedural fallback uses rotY)
+    }else if(occupied){
+      mesh=makeHull(cls, col, 0.97); mesh.rotation.y=rotY;  // procedural hull (incl. 'Other' default shape)
+    }else if(isNA){
+      mesh=new THREE.Mesh(new THREE.BoxGeometry(DIMS.boatBeam*0.95,0.08,DIMS.boatLen*0.9),
+        new THREE.MeshStandardMaterial({map:hazardTexture(), roughness:.85}));  // bay unavailable in current config
+      mesh.rotation.y=rotY;
+    }else{
+      mesh=new THREE.Mesh(new THREE.BoxGeometry(DIMS.boatBeam*0.8,0.05,DIMS.boatLen*0.85),
+        new THREE.MeshStandardMaterial({color:col, transparent:true, opacity:0.22}));
+      mesh.rotation.y=rotY;
+    }
+    // vacant/NA pads lie flush on their surface (floor for lower tier, shelf for upper), not at boat-centre height
+    const isPad = isNA || !occupied;
+    const surfY = s.tier==='upper' ? (DIMS.tierUpperY-DIMS.boatH/2+0.02) : 0.04;
+    const p3r = isPad ? {x:p3.x, y:surfY, z:p3.z} : p3;
+    mesh.position.set(p3r.x,p3r.y,p3r.z);
+    mesh.receiveShadow=true;
+    mesh.userData = Object.assign({}, s, {pos3d:p3r, posPlan:pp});
+    slotGroup.add(mesh); slotMeshes.push(mesh);
+
+    const lab=labelSprite(s.slot_id);
+    lab.position.set(p3.x, p3.y+0.9, p3.z);
+    lab.userData.isLabel=true;
+    lab.userData.pos3d={x:p3.x, y:p3.y+0.9, z:p3.z};
+    lab.userData.posPlan={x:pp.x, y:1, z:pp.z};
+    mesh.userData.labelObj=lab;
+    slotGroup.add(lab);
+  }
+  setLayout(planMode);
+  updateCounts();
+  renderLegend();
+}
+
+// Legend reflects the current colour mode (status colours, or the classes present).
+function renderLegend(){
+  const el=document.getElementById('legendItems'); if(!el) return;
+  const sw=c=>`<span class="sw" style="background:#${c.toString(16).padStart(6,'0')}"></span>`;
+  const swHazard=()=>`<span class="sw" style="background:repeating-linear-gradient(45deg,#e8b800 0 4px,#262626 4px 8px)"></span>`;
+  const cnt=v=>`<span style="color:var(--muted);margin-left:6px">(${v})</span>`;   // count suffix
+  if(COLOUR_MODE==='status'){
+    const order=['paid','club','unknown','vacant','na'];
+    const rank=k=>{const i=order.indexOf(k);return i<0?99:i;};
+    const sCount=k=>(slotData||[]).filter(s=>(s.status||'').toLowerCase()===k).length;
+    const present=[...new Set((slotData||[]).map(s=>(s.status||'').toLowerCase()).filter(Boolean))].sort((a,b)=>rank(a)-rank(b));
+    el.innerHTML=present.map(k=>`<div class="item">${k==='na'?swHazard():sw(STATUS_COLORS[k]??0x7a8a99)}${STATUS_LABEL[k]||k}${cnt(sCount(k))}</div>`).join('');
+  }else{
+    const cCount=c=>(slotData||[]).filter(s=>(s.boat_class||'').trim()===c).length;
+    const present=[...new Set((slotData||[]).map(s=>(s.boat_class||'').trim()).filter(Boolean))].sort();
+    el.innerHTML = present.length
+      ? present.map(c=>{const m=classMeta(c);const col=(m&&m.colour!=null)?m.colour:0x7a8a99;return `<div class="item">${sw(col)}${(m&&m.display_name)||c}${cnt(cCount(c))}</div>`;}).join('')
+      : '<div class="item" style="color:var(--muted)">No class data</div>';
+  }
+}
+
+// Reposition slots + labels for 3D (stacked tiers) or Plan (split lanes).
+function setLayout(plan){
+  for(const mesh of slotMeshes){
+    const p = plan ? mesh.userData.posPlan : mesh.userData.pos3d;
+    mesh.position.set(p.x, p.y, p.z);
+    const lab=mesh.userData.labelObj;
+    const lp = plan ? lab.userData.posPlan : lab.userData.pos3d;
+    lab.position.set(lp.x, lp.y, lp.z);
+  }
+}
+
+function updateCounts(){
+  const st=s=>(s.status||'').toLowerCase();
+  const na =slotData.filter(s=>st(s)==='na').length;
+  const vac=slotData.filter(s=>st(s)==='vacant'||st(s)==='').length;
+  const occ=slotData.length-na-vac;
+  document.getElementById('counts').innerHTML =
+    `<span><b>${slotData.length}</b> bays</span>`+
+    `<span><b>${occ}</b> occupied</span>`+
+    `<span><b>${vac}</b> vacant</span>`+
+    `<span><b>${na}</b> n/a</span>`;
+}
+
+// ---------------- custom orbit controls ----------------
+const target=new THREE.Vector3(0, 1.5, 0);
+// Default view: from the road/east side, like the street-view photo (looking at the door wall)
+const VIEW0={theta:Math.PI*0.05, phi:Math.PI*0.30, radius:32};
+let theta=VIEW0.theta, phi=VIEW0.phi, radius=VIEW0.radius;
+let planMode=false;
+function applyCamera(){
+  if(planMode){
+    camera.position.set(target.x, 55, target.z+0.001);
+    camera.up.set(0,0,-1); camera.lookAt(target.x,0,target.z);
+  }else{
+    camera.up.set(0,1,0);
+    camera.position.set(
+      target.x+radius*Math.sin(phi)*Math.sin(theta),
+      target.y+radius*Math.cos(phi),
+      target.z+radius*Math.sin(phi)*Math.cos(theta));
+    camera.lookAt(target);
+  }
+}
+let drag=null;
+renderer.domElement.addEventListener('pointerdown',e=>{
+  drag={x:e.clientX,y:e.clientY,btn:e.button,moved:false}; });
+addEventListener('pointerup',e=>{
+  if(drag && !drag.moved) pick(e);
+  drag=null; });
+addEventListener('pointermove',e=>{
+  if(!drag) return;
+  const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+  if(Math.abs(dx)+Math.abs(dy)>3) drag.moved=true;
+  drag.x=e.clientX; drag.y=e.clientY;
+  if(planMode){
+    const k=radius/600;
+    target.x -= dx*k; target.z -= dy*k;
+  }else if(drag.btn===2){
+    const k=radius/600;
+    target.x -= dx*k*Math.cos(theta)+0; target.z += dx*k*Math.sin(theta);
+    target.y += dy*k;
+  }else{
+    theta -= dx*0.005; phi -= dy*0.005;
+    phi=Math.max(0.12,Math.min(Math.PI/2-0.02,phi));
+  }
+  applyCamera();
+});
+renderer.domElement.addEventListener('wheel',e=>{
+  e.preventDefault();
+  radius *= (1+Math.sign(e.deltaY)*0.08);
+  radius=Math.max(10,Math.min(80,radius));
+  applyCamera();
+},{passive:false});
+renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
+
+// ---------------- picking ----------------
+const ray=new THREE.Raycaster(), mouse=new THREE.Vector2();
+function pick(e){
+  mouse.x=(e.clientX/innerWidth)*2-1;
+  mouse.y=-(e.clientY/innerHeight)*2+1;
+  ray.setFromCamera(mouse,camera);
+  // recursive: hit the real hull geometry (GLB meshes live under a non-raycasting proxy). Choose the
+  // first solid hit; skip see-through vacant pads so clicks pass through them to the boat/pad behind.
+  const hits=ray.intersectObjects(slotMeshes,true);
+  let solid=null, seeThru=null;
+  for(const h of hits){
+    let o=h.object; while(o && slotMeshes.indexOf(o)<0) o=o.parent;
+    if(!o) continue;
+    const m=o.material, faint = m && m.transparent && m.opacity!=null && m.opacity<0.35;
+    if(faint){ if(!seeThru) seeThru=o; continue; }
+    solid=o; break;
+  }
+  const sel=solid||seeThru;
+  if(sel){ showInfo(sel.userData); highlight(sel); }
+  else hideInfo();
+}
+let hi=null;
+function highlight(mesh){
+  if(hi) hi.scale.set(1,1,1);
+  hi=mesh; mesh.scale.set(1.08,1.3,1.08);
+}
+function showInfo(s){
+  const p=document.getElementById('info'); p.style.display='block';
+  document.getElementById('iSlot').textContent='Slot '+s.slot_id;
+  const tag=document.getElementById('iTag');
+  tag.textContent=STATUS_LABEL[s.status]||s.status;
+  tag.style.background='#'+(STATUS_COLORS[s.status]??STATUS_COLORS.vacant).toString(16).padStart(6,'0');
+  document.getElementById('iOwner').textContent = s.owner||'—';
+  document.getElementById('iBoat').textContent  = s.boat_name||'—';
+  const _cm=classMeta(s.boat_class);
+  document.getElementById('iClass').textContent = (_cm&&_cm.display_name) || s.boat_class || '—';
+  document.getElementById('iNo').textContent = s.boat_no||'—';
+  document.getElementById('iRacing').textContent = s.racing ? ({Y:'Yes',N:'No'}[s.racing.toUpperCase()]||s.racing) : '—';
+  document.getElementById('iNotes').textContent = s.notes||'—';
+}
+function hideInfo(){ document.getElementById('info').style.display='none'; if(hi){hi.scale.set(1,1,1);hi=null;} }
+document.getElementById('infoClose').onclick=hideInfo;
+
+// ---------------- CSV loading ----------------
+function normHeader(h){ const k=h.trim().toLowerCase().replace(/\s+/g,'_'); return ({bay_id:'slot_id'})[k]||k; }
+function parseCSV(text){
+  const lines=text.replace(/\r/g,'').split('\n').filter(l=>l.trim().length);
+  const head=splitLine(lines[0]).map(normHeader);
+  return lines.slice(1).map(l=>{
+    const cells=splitLine(l); const o={};
+    head.forEach((h,i)=>o[h]=(cells[i]??'').trim());
+    if((o.rack===undefined||o.rack==='') && o.slot_id){ const rp=slotToRackPos(o.slot_id); o.rack=rp.rack; o.pos=rp.pos; }
+    else { o.rack=parseInt(o.rack,10)||1; o.pos=parseInt(o.pos,10)||1; }
+    o.status=(o.status||'').trim().toLowerCase();
+    return o;
+  });
+}
+function splitLine(l){
+  const out=[]; let cur='',q=false;
+  for(let i=0;i<l.length;i++){const c=l[i];
+    if(c==='"'){ if(q&&l[i+1]==='"'){cur+='"';i++;} else q=!q; }
+    else if(c===','&&!q){out.push(cur);cur='';}
+    else cur+=c;}
+  out.push(cur); return out;
+}
+document.getElementById('csv').addEventListener('change',ev=>{
+  const f=ev.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{ buildSlots(parseCSV(r.result)); hideInfo(); }
+    catch(err){ alert('Could not read CSV: '+err.message); } };
+  r.readAsText(f);
+});
+// classes.csv: class, display_name, colour, notes  (keyed by class, links to boat_class in slots)
+function loadClasses(text){
+  const rows=parseCSV(text), m={};
+  for(const r of rows){ const k=(r.class||'').trim().toLowerCase(); if(!k) continue;
+    m[k]={display_name:(r.display_name||r.class).trim(), colour:hexColour(r.colour)}; }
+  if(Object.keys(m).length){ CLASS_META=m; if(slotData.length) buildSlots(slotData); else renderLegend(); }
+}
+document.getElementById('classcsv').addEventListener('change',ev=>{
+  const f=ev.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{ loadClasses(r.result); }catch(err){ alert('Could not read classes CSV: '+err.message); } };
+  r.readAsText(f);
+});
+// colour-mode toggle (Status <-> Class)
+const bcs=document.getElementById('btnColStatus'), bcc=document.getElementById('btnColClass');
+function setColourMode(mode){ COLOUR_MODE=mode;
+  bcs.classList.toggle('active',mode==='status'); bcc.classList.toggle('active',mode==='class');
+  if(slotData.length) buildSlots(slotData); else renderLegend(); }
+bcs.onclick=()=>setColourMode('status'); bcc.onclick=()=>setColourMode('class');
+
+// ---------------- view toggle ----------------
+const b3=document.getElementById('btn3d'), bp=document.getElementById('btnPlan');
+b3.onclick=()=>{planMode=false;b3.classList.add('active');bp.classList.remove('active');
+  document.getElementById('hint').textContent='Drag to orbit · scroll to zoom · click a slot';setLayout(false);applyCamera();};
+bp.onclick=()=>{planMode=true;bp.classList.add('active');b3.classList.remove('active');
+  document.getElementById('hint').textContent='Top-down plan · tiers split · drag to pan · click a slot';setLayout(true);applyCamera();};
+document.getElementById('btnReset').onclick=()=>{
+  target.set(0,1.5,0); theta=VIEW0.theta; phi=VIEW0.phi; radius=VIEW0.radius; applyCamera();};
+
+// ---------------- boot ----------------
+buildSlots((window.SAMPLE_SLOTS||[]).map(s=>({...s,bay:+s.bay})));
+// Data source: ?data= and ?classes= (e.g. Google Sheets "Publish to web" CSV links) override the
+// local files. With no params it uses slots.csv / classes.csv next to the page (local/offline use).
+const Q = new URLSearchParams(location.search);
+const SLOTS_URL   = Q.get('data')    || 'slots.csv';
+const CLASSES_URL = Q.get('classes') || 'classes.csv';
+fetch(SLOTS_URL).then(r=>r.ok?r.text():Promise.reject()).then(t=>{
+  const d=parseCSV(t);
+  if(d.length && d.some(s=>s.slot_id)) buildSlots(d);   // only override the demo if it parsed to real rows
+}).catch(()=>{});
+fetch(CLASSES_URL).then(r=>r.ok?r.text():Promise.reject()).then(t=>loadClasses(t)).catch(()=>{});
+applyCamera();
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+(function loop(){ requestAnimationFrame(loop);
+  if(window.ROOF_MAT){
+    // phi: ~pi/2 = side/road view (roof solid) -> small = overhead (roof fades away)
+    const op = planMode ? 0 : (0.04 + Math.min(1,Math.max(0,(phi-0.45)/0.40))*0.46);
+    window.ROOF_MAT.opacity=op; window.ROOF_MAT.visible=op>0.02;
+  }
+  renderer.render(scene,camera); })();
+</script>
+</body>
+</html>
