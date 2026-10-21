@@ -31,7 +31,9 @@
   label.file:hover{border-color:var(--accent)}
   input[type=file]{display:none}
   #legend{bottom:14px;left:14px}
-  #legend .item{display:flex;align-items:center;gap:8px;margin:3px 0}
+  #legend .item{display:flex;align-items:center;gap:8px;margin:2px 0;cursor:pointer;border-radius:4px;padding:1px 4px;transition:opacity .15s,background .15s}
+  #legend .item:hover{background:rgba(255,255,255,.07)}
+  #legend .item.muted{opacity:.3}
   .sw{width:14px;height:14px;border-radius:3px;border:1px solid rgba(255,255,255,.25)}
   #counts{display:flex;gap:14px;margin-top:8px;color:var(--muted);font-size:12px;flex-wrap:wrap}
   #counts b{color:var(--ink)}
@@ -55,7 +57,7 @@
 
 <div id="title" class="panel">
   <h1>Port River Sailing Club</h1>
-  <div class="sub">Member boat storage shed &middot; <span id="dimLabel"></span></div>
+  <div class="sub">Boat Storage Register</div>
 </div>
 
 <div id="controls" class="panel">
@@ -132,6 +134,7 @@ let CLASS_META = {
 const classMeta = c => CLASS_META[(c||'').trim().toLowerCase()];
 function hexColour(s){ s=(s||'').trim().replace(/^#/,''); const n=parseInt(s,16); return (s.length>=3 && !isNaN(n))?n:null; }
 let COLOUR_MODE='status';   // 'status' | 'class'
+let activeFilter=null;      // isolated legend key (status/class), or null = show all
 function slotColour(s){
   if(COLOUR_MODE==='class'){ const m=classMeta(EFF_CLASS(s)); return (m && m.colour!=null)?m.colour:0x7a8a99; }
   return STATUS_COLORS[(s.status||'').toLowerCase()] ?? STATUS_COLORS.vacant;
@@ -243,7 +246,7 @@ function attachHull(proxy, cls, color, rotY, rotYproc){
   });
 }
 
-document.getElementById('dimLabel').textContent = DIMS.length+' × '+DIMS.width+' m';
+{const dl=document.getElementById('dimLabel'); if(dl) dl.textContent = DIMS.length+' × '+DIMS.width+' m';}
 
 // ---------------- three.js scene ----------------
 const app = document.getElementById('app');
@@ -343,7 +346,6 @@ const shell = new THREE.Group(); scene.add(shell);
     for(let yy=0.3; yy<h-0.1; yy+=0.5){
       const rib=new THREE.Mesh(new THREE.BoxGeometry(w*0.95,0.05,0.13), ribMat); rib.position.set(0,yy,0.02); g.add(rib);
     }
-    const lab=labelSprite(label); lab.scale.set(2.2,0.55,1); lab.position.set(0,h+0.5,0); g.add(lab);
     g.position.set(cx, 0, W/2+0.06);
     shell.add(g);
   }
@@ -477,6 +479,26 @@ function buildSlots(data){
   setLayout(planMode);
   updateCounts();
   renderLegend();
+  applyFilter();
+}
+
+// --- Legend filtering: click a legend row to isolate that status/class; non-matching bays fade ---
+function filterKeyOf(s){ return COLOUR_MODE==='class' ? EFF_CLASS(s).toLowerCase() : (s.status||'').toLowerCase(); }
+function setFaded(obj, faded){
+  obj.traverse(o=>{ const mm=o.material; if(!mm) return;
+    (Array.isArray(mm)?mm:[mm]).forEach(m=>{
+      if(m.userData.o0===undefined){ m.userData.o0=(m.opacity===undefined?1:m.opacity); m.userData.t0=!!m.transparent; }
+      if(faded){ m.transparent=true; m.opacity=m.userData.o0*0.1; }
+      else { m.opacity=m.userData.o0; m.transparent=m.userData.t0; }
+    });
+  });
+}
+function applyFilter(){
+  for(const mesh of slotMeshes){
+    const faded = activeFilter!=null && filterKeyOf(mesh.userData)!==activeFilter;
+    setFaded(mesh, faded);
+    if(mesh.userData.labelObj) setFaded(mesh.userData.labelObj, faded);
+  }
 }
 
 // Legend reflects the current colour mode (status colours, or the classes present).
@@ -490,12 +512,12 @@ function renderLegend(){
     const rank=k=>{const i=order.indexOf(k);return i<0?99:i;};
     const sCount=k=>(slotData||[]).filter(s=>(s.status||'').toLowerCase()===k).length;
     const present=[...new Set((slotData||[]).map(s=>(s.status||'').toLowerCase()).filter(Boolean))].sort((a,b)=>rank(a)-rank(b));
-    el.innerHTML=present.map(k=>`<div class="item">${k==='na'?swHazard():sw(STATUS_COLORS[k]??0x7a8a99)}${STATUS_LABEL[k]||k}${cnt(sCount(k))}</div>`).join('');
+    el.innerHTML=present.map(k=>`<div class="item${activeFilter!=null&&activeFilter!==k?' muted':''}" data-k="${k}">${k==='na'?swHazard():sw(STATUS_COLORS[k]??0x7a8a99)}${STATUS_LABEL[k]||k}${cnt(sCount(k))}</div>`).join('');
   }else{
     const cCount=c=>(slotData||[]).filter(s=>(s.boat_class||'').trim()===c).length;
     const present=[...new Set((slotData||[]).map(s=>(s.boat_class||'').trim()).filter(Boolean))].sort();
     el.innerHTML = present.length
-      ? present.map(c=>{const m=classMeta(c);const col=(m&&m.colour!=null)?m.colour:0x7a8a99;return `<div class="item">${sw(col)}${(m&&m.display_name)||c}${cnt(cCount(c))}</div>`;}).join('')
+      ? present.map(c=>{const m=classMeta(c);const col=(m&&m.colour!=null)?m.colour:0x7a8a99;const k=c.toLowerCase();return `<div class="item${activeFilter!=null&&activeFilter!==k?' muted':''}" data-k="${k}">${sw(col)}${(m&&m.display_name)||c}${cnt(cCount(c))}</div>`;}).join('')
       : '<div class="item" style="color:var(--muted)">No class data</div>';
   }
 }
@@ -661,10 +683,17 @@ document.getElementById('classcsv').addEventListener('change',ev=>{
 });
 // colour-mode toggle (Status <-> Class)
 const bcs=document.getElementById('btnColStatus'), bcc=document.getElementById('btnColClass');
-function setColourMode(mode){ COLOUR_MODE=mode;
+function setColourMode(mode){ COLOUR_MODE=mode; activeFilter=null;   // filter keys differ by mode -> clear
   bcs.classList.toggle('active',mode==='status'); bcc.classList.toggle('active',mode==='class');
   if(slotData.length) buildSlots(slotData); else renderLegend(); }
 bcs.onclick=()=>setColourMode('status'); bcc.onclick=()=>setColourMode('class');
+// Click a legend row to isolate that status/class; click it again to show all.
+document.getElementById('legendItems').addEventListener('click',e=>{
+  const it=e.target.closest('.item[data-k]'); if(!it) return;
+  const k=it.getAttribute('data-k');
+  activeFilter = (activeFilter===k) ? null : k;
+  renderLegend(); applyFilter();
+});
 
 // ---------------- view toggle ----------------
 const b3=document.getElementById('btn3d'), bp=document.getElementById('btnPlan');
