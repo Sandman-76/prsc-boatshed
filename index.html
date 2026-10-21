@@ -442,14 +442,20 @@ function buildSlots(data){
       attachHull(mesh, cls, col, boatRot(rack,true), rotY);  // real GLB hull, bow out (procedural fallback uses rotY)
     }else if(occupied){
       mesh=makeHull(cls, col, 0.97); mesh.rotation.y=rotY;  // procedural hull (incl. 'Other' default shape)
-    }else if(isNA){
-      mesh=new THREE.Mesh(new THREE.BoxGeometry(DIMS.boatBeam*0.95,0.08,DIMS.boatLen*0.9),
-        new THREE.MeshStandardMaterial({map:hazardTexture(), roughness:.85}));  // bay unavailable in current config
-      mesh.rotation.y=rotY;
-    }else{
+    }else if(isNA){   // bay unavailable in current config
+      const haz=new THREE.MeshStandardMaterial({map:hazardTexture(), roughness:.85, side:THREE.DoubleSide});
+      if(s.tier==='upper'){                                            // raised tile on the shelf (keep thickness)
+        mesh=new THREE.Mesh(new THREE.BoxGeometry(DIMS.boatBeam*0.95,0.08,DIMS.boatLen*0.9), haz);
+        mesh.rotation.y=rotY;
+      }else{                                                           // flat on the floor (no thickness)
+        const plane=new THREE.Mesh(new THREE.PlaneGeometry(DIMS.boatBeam*0.95,DIMS.boatLen*0.9), haz);
+        plane.rotation.x=-Math.PI/2;
+        mesh=new THREE.Group(); mesh.add(plane); mesh.rotation.y=rotY;
+      }
+    }else{   // vacant: no visible pad — blend with the floor/shelf (label still shows)
       mesh=new THREE.Mesh(new THREE.BoxGeometry(DIMS.boatBeam*0.8,0.05,DIMS.boatLen*0.85),
-        new THREE.MeshStandardMaterial({color:col, transparent:true, opacity:0.22}));
-      mesh.rotation.y=rotY;
+        new THREE.MeshBasicMaterial({visible:false}));
+      mesh.visible=false; mesh.rotation.y=rotY;
     }
     // vacant/NA pads lie flush on their surface (floor for lower tier, shelf for upper), not at boat-centre height
     const isPad = isNA || !occupied;
