@@ -15,14 +15,16 @@ and the link to it, exist only in the Google Sheet and in the club-page embed (b
 
 ## 1. Google Sheet (the data)
 
-1. Create a new Google Sheet. Make **two tabs**, named exactly **`slots`** and **`classes`**.
-2. **`slots` tab** — first row must be these headers (copy from `slots.csv`):
+1. Create a new Google Sheet with **two tabs** — this project uses **`Bays`** and **`Classes`**.
+   (The tab *name* doesn't matter to the site; the published links are tied to each tab's `gid`, so
+   you can rename tabs freely without re-publishing.)
+2. **`Bays` tab** — first row must be these headers (copy from `slots.csv`):
    `Bay Id, Tier, Owner, Boat Name, Boat Class, Boat No, Status, Racing, Notes`
    Paste the real member data beneath (your copy is at `..\_boatshed-real-slots.csv`).
-3. **`classes` tab** — headers: `class, display_name, colour, notes` (copy from `classes.csv`).
+3. **`Classes` tab** — headers: `class, display_name, colour, notes` (copy from `classes.csv`).
 4. Publish each tab as CSV: **File → Share → Publish to web**:
-   - "Link" → choose the **`slots`** tab → **Comma-separated values (.csv)** → **Publish**. Copy the URL.
-   - Repeat for the **`classes`** tab. Copy that URL.
+   - "Link" → choose the **`Bays`** tab → **Comma-separated values (.csv)** → **Publish**. Copy the URL.
+   - Repeat for the **`Classes`** tab. Copy that URL.
    You now have two links like
    `https://docs.google.com/spreadsheets/d/e/2PACX-…/pub?gid=0&single=true&output=csv`.
 
