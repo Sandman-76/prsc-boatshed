@@ -709,11 +709,19 @@ buildSlots((window.SAMPLE_SLOTS||[]).map(s=>({...s,bay:+s.bay})));
 // Data source: ?data= and ?classes= (e.g. Google Sheets "Publish to web" CSV links) override the
 // local files. With no params it uses slots.csv / classes.csv next to the page (local/offline use).
 const Q = new URLSearchParams(location.search);
-const SLOTS_URL   = Q.get('data')    || 'slots.csv';
-const CLASSES_URL = Q.get('classes') || 'classes.csv';
-// On the live site the data comes from the Sheet (a page refresh re-reads it), so hide the manual
-// Load buttons there. They stay for local/offline use (opening index.html with no ?data= link).
-if(Q.get('data')){ ['loadSlots','loadClasses'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';}); }
+// Remember the Sheet links from the URL in localStorage, then strip them from the address bar so the
+// URL stays clean. A refresh re-reads them from storage, so the short link only needs to carry them once.
+let dataUrl = Q.get('data'), classesUrl = Q.get('classes');
+try{
+  if(dataUrl){ localStorage.setItem('prsc_data', dataUrl); classesUrl ? localStorage.setItem('prsc_classes', classesUrl) : localStorage.removeItem('prsc_classes'); }
+  else { dataUrl = localStorage.getItem('prsc_data'); classesUrl = localStorage.getItem('prsc_classes'); }
+}catch(e){}
+const SLOTS_URL   = dataUrl    || 'slots.csv';
+const CLASSES_URL = classesUrl || 'classes.csv';
+// hide the manual Load buttons when a remote (Sheet) data source is in use
+if(dataUrl){ ['loadSlots','loadClasses'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';}); }
+// clean the long ?data=/?classes= noise out of the address bar
+try{ if(location.search && window.history && history.replaceState) history.replaceState(null,'',location.pathname); }catch(e){}
 fetch(SLOTS_URL).then(r=>r.ok?r.text():Promise.reject()).then(t=>{
   const d=parseCSV(t);
   if(d.length && d.some(s=>s.slot_id)) buildSlots(d);   // only override the demo if it parsed to real rows
