@@ -352,6 +352,11 @@ const shell = new THREE.Group(); scene.add(shell);
 
 // ---------------- slots ----------------
 const slotGroup = new THREE.Group(); scene.add(slotGroup);
+// flat rectangle outline (bay footprint, XZ plane) used for vacant markers; + glowing selection box
+function footprintGeo(w,l){ const hw=w/2,hl=l/2; return new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(-hw,0,-hl),new THREE.Vector3(hw,0,-hl),new THREE.Vector3(hw,0,hl),new THREE.Vector3(-hw,0,hl),new THREE.Vector3(-hw,0,-hl)]); }
+const selBox=new THREE.BoxHelper(new THREE.Object3D(),0x66e0ff);
+selBox.material.transparent=true; selBox.material.opacity=0.95; selBox.visible=false; scene.add(selBox);
 const slotMeshes = [];           // for raycasting
 let slotData = [];
 
@@ -407,6 +412,7 @@ function boatRot(rack, isGLB){ return BOW_ROT[RACKS[rack-1].bow][isGLB?1:0]; }
 function buildSlots(data){
   slotMeshes.length=0;
   while(slotGroup.children.length) slotGroup.remove(slotGroup.children[0]);
+  hi=null; if(typeof selBox!=='undefined') selBox.visible=false;   // clear any selection on rebuild
   slotData = data;
 
   // rack frames (steel): one per rack per tier, oriented along the rack axis, uniform depth
@@ -451,10 +457,12 @@ function buildSlots(data){
         plane.rotation.x=-Math.PI/2;
         mesh=new THREE.Group(); mesh.add(plane); mesh.rotation.y=rotY;
       }
-    }else{   // vacant: no visible pad — blend with the floor/shelf (label still shows)
-      mesh=new THREE.Mesh(new THREE.BoxGeometry(DIMS.boatBeam*0.8,0.05,DIMS.boatLen*0.85),
+    }else{   // vacant: faint footprint outline on the floor; the invisible box is the click target
+      mesh=new THREE.Mesh(new THREE.BoxGeometry(DIMS.boatBeam*0.9,0.02,DIMS.boatLen*0.9),
         new THREE.MeshBasicMaterial({visible:false}));
-      mesh.visible=false; mesh.rotation.y=rotY;
+      mesh.add(new THREE.Line(footprintGeo(DIMS.boatBeam*0.9,DIMS.boatLen*0.9),
+        new THREE.LineBasicMaterial({color:0x8aa0b4,transparent:true,opacity:0.5})));
+      mesh.rotation.y=rotY;
     }
     // vacant/NA pads lie flush on their surface (floor for lower tier, shelf for upper), not at boat-centre height
     const isPad = isNA || !occupied;
@@ -618,6 +626,7 @@ let hi=null;
 function highlight(mesh){
   if(hi) hi.scale.set(1,1,1);
   hi=mesh; mesh.scale.set(1.08,1.3,1.08);
+  selBox.setFromObject(mesh); selBox.visible=true;   // glowing outline around the selected bay
 }
 function showInfo(s){
   const p=document.getElementById('info'); p.style.display='block';
@@ -633,7 +642,7 @@ function showInfo(s){
   document.getElementById('iRacing').textContent = s.racing ? ({Y:'Yes',N:'No'}[s.racing.toUpperCase()]||s.racing) : '—';
   document.getElementById('iNotes').textContent = s.notes||'—';
 }
-function hideInfo(){ document.getElementById('info').style.display='none'; if(hi){hi.scale.set(1,1,1);hi=null;} }
+function hideInfo(){ document.getElementById('info').style.display='none'; if(hi){hi.scale.set(1,1,1);hi=null;} selBox.visible=false; }
 document.getElementById('infoClose').onclick=hideInfo;
 
 // ---------------- CSV loading ----------------
