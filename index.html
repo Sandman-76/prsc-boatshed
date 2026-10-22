@@ -348,7 +348,7 @@ const shell = new THREE.Group(); scene.add(shell);
   const head=new THREE.Mesh(new THREE.ConeGeometry(0.38,0.95,18), mat); head.rotation.z=-Math.PI/2; head.position.x=1.45;
   const nlab=labelSprite('N'); nlab.scale.set(1.0,0.5,1); nlab.position.set(2.5,0.5,0);
   north.add(shaft,head,nlab);
-  north.position.set(-7.0, 0.06, W/2+2.0);  // open south-east floor, clear of the racks
+  north.position.set(1.5, 0.06, W/2+2.0);   // just outside the road wall, inline with Door 1, clear of the legend
   shell.add(north);
 
   // Two roller doors on the road-side (east, +Z) long wall
