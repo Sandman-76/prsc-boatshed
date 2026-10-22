@@ -74,9 +74,11 @@
 </div>
 
 <div id="legend" class="panel">
-  <div class="row" style="margin-bottom:8px">
-    <button id="btnColStatus" class="active" style="flex:1">Status</button>
-    <button id="btnColClass" style="flex:1">Class</button>
+  <div class="row" style="margin-bottom:8px;flex-wrap:wrap">
+    <button id="btnColStatus" class="active" style="flex:1 1 40%">Status</button>
+    <button id="btnColClass" style="flex:1 1 40%">Class</button>
+    <button id="btnColRacing" style="flex:1 1 40%">Racing</button>
+    <button id="btnColOwner" style="flex:1 1 40%">Owner</button>
   </div>
   <div id="legendItems"></div>
   <div id="counts"></div>
@@ -122,6 +124,18 @@ const DIMS = {
 const STATUS_COLORS = {paid:0x2e9e4f, unpaid:0xdc3545, club:0x3a86ff, unknown:0xe0a52e, vacant:0x7a8a99, na:0xe8b800};
 const STATUS_LABEL  = {paid:'Paid', unpaid:'Unpaid', club:'Club boat', unknown:'Unknown', vacant:'Vacant', na:'Not available'};
 const EFF_CLASS = s => (s.boat_class && s.boat_class.trim()) ? s.boat_class.trim() : 'Other';
+// Racing: blank counts as No. Owner: a colour per distinct owner (built from the data).
+const RACING_COLORS = {y:0x59a14f, n:0x7a8a99};
+const RACING_LABEL  = {y:'Yes', n:'No'};
+const racingVal = s => ((s.racing||'').trim().toUpperCase()==='Y') ? 'y' : 'n';
+const PALETTE = [0x4e79a7,0xf28e2b,0xe15759,0x76b7b2,0x59a14f,0xedc948,0xb07aa1,0xff9da7,0x9c755f,0x86bcb6,0xd37295,0xb6992d,0x499894,0xfabfd2,0xbab0ac];
+let OWNER_COLORS = {};
+function buildOwnerColors(){
+  OWNER_COLORS={};
+  [...new Set((slotData||[]).map(s=>(s.owner||'').trim()).filter(Boolean))].sort()
+    .forEach((o,i)=>{ OWNER_COLORS[o]=PALETTE[i%PALETTE.length]; });
+}
+const ownerColour = s => { const o=(s.owner||'').trim(); return o ? (OWNER_COLORS[o]??0x7a8a99) : 0x7a8a99; };
 
 // --- Class metadata (display name + display colour); overridden by classes.csv when loaded ---
 let CLASS_META = {
@@ -138,6 +152,8 @@ let activeFilter=null;      // isolated legend key (status/class), or null = sho
 let wallsVisible=false;     // walls+roof hidden by default (toggle respected by the render loop)
 function slotColour(s){
   if(COLOUR_MODE==='class'){ const m=classMeta(EFF_CLASS(s)); return (m && m.colour!=null)?m.colour:0x7a8a99; }
+  if(COLOUR_MODE==='racing'){ return RACING_COLORS[racingVal(s)]; }
+  if(COLOUR_MODE==='owner'){ return ownerColour(s); }
   return STATUS_COLORS[(s.status||'').toLowerCase()] ?? STATUS_COLORS.vacant;
 }
 // slot number -> rack/pos (inverse of the club numbering; odd=lower tier, even=upper)
@@ -423,6 +439,7 @@ function buildSlots(data){
   while(slotGroup.children.length) slotGroup.remove(slotGroup.children[0]);
   hi=null; if(typeof selBox!=='undefined') selBox.visible=false;   // clear any selection on rebuild
   slotData = data;
+  buildOwnerColors();   // assign a colour per distinct owner for Owner mode
 
   // rack frames (steel): one per rack per tier, oriented along the rack axis, uniform depth
   const rackMat=new THREE.MeshStandardMaterial({color:0x5b6b78,metalness:.4,roughness:.6});
@@ -499,7 +516,12 @@ function buildSlots(data){
 }
 
 // --- Legend filtering: click a legend row to isolate that status/class; non-matching bays fade ---
-function filterKeyOf(s){ return COLOUR_MODE==='class' ? EFF_CLASS(s).toLowerCase() : (s.status||'').toLowerCase(); }
+function filterKeyOf(s){
+  if(COLOUR_MODE==='class')  return EFF_CLASS(s).toLowerCase();
+  if(COLOUR_MODE==='racing') return racingVal(s);
+  if(COLOUR_MODE==='owner'){ const o=(s.owner||'').trim(); return o?o.toLowerCase():'(unassigned)'; }
+  return (s.status||'').toLowerCase();
+}
 function setFaded(obj, faded){
   obj.traverse(o=>{ const mm=o.material; if(!mm) return;
     (Array.isArray(mm)?mm:[mm]).forEach(m=>{
@@ -525,19 +547,27 @@ function renderLegend(){
   const sw=c=>`<span class="sw" style="background:#${c.toString(16).padStart(6,'0')}"></span>`;
   const swHazard=()=>`<span class="sw" style="background:repeating-linear-gradient(45deg,#e8b800 0 4px,#262626 4px 8px)"></span>`;
   const cnt=v=>`<span style="color:var(--muted);margin-left:6px">(${v})</span>`;   // count suffix
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const data=slotData||[];
+  let items=[];   // {k, label, sw:<html>, count}
   if(COLOUR_MODE==='status'){
-    const order=['paid','unpaid','club','unknown','vacant','na'];
-    const rank=k=>{const i=order.indexOf(k);return i<0?99:i;};
-    const sCount=k=>(slotData||[]).filter(s=>(s.status||'').toLowerCase()===k).length;
-    const present=[...new Set((slotData||[]).map(s=>(s.status||'').toLowerCase()).filter(Boolean))].sort((a,b)=>rank(a)-rank(b));
-    el.innerHTML=present.map(k=>`<div class="item${activeFilter!=null&&activeFilter!==k?' muted':''}" data-k="${k}">${k==='na'?swHazard():sw(STATUS_COLORS[k]??0x7a8a99)}${STATUS_LABEL[k]||k}${cnt(sCount(k))}</div>`).join('');
-  }else{
-    const cCount=c=>(slotData||[]).filter(s=>(s.boat_class||'').trim()===c).length;
-    const present=[...new Set((slotData||[]).map(s=>(s.boat_class||'').trim()).filter(Boolean))].sort();
-    el.innerHTML = present.length
-      ? present.map(c=>{const m=classMeta(c);const col=(m&&m.colour!=null)?m.colour:0x7a8a99;const k=c.toLowerCase();return `<div class="item${activeFilter!=null&&activeFilter!==k?' muted':''}" data-k="${k}">${sw(col)}${(m&&m.display_name)||c}${cnt(cCount(c))}</div>`;}).join('')
-      : '<div class="item" style="color:var(--muted)">No class data</div>';
+    const order=['paid','unpaid','club','unknown','vacant','na']; const rank=k=>{const i=order.indexOf(k);return i<0?99:i;};
+    [...new Set(data.map(s=>(s.status||'').toLowerCase()).filter(Boolean))].sort((a,b)=>rank(a)-rank(b))
+      .forEach(k=>items.push({k, label:STATUS_LABEL[k]||k, sw:(k==='na'?swHazard():sw(STATUS_COLORS[k]??0x7a8a99)), count:data.filter(s=>(s.status||'').toLowerCase()===k).length}));
+  }else if(COLOUR_MODE==='class'){
+    [...new Set(data.map(s=>(s.boat_class||'').trim()).filter(Boolean))].sort()
+      .forEach(c=>{const m=classMeta(c);const col=(m&&m.colour!=null)?m.colour:0x7a8a99;items.push({k:c.toLowerCase(), label:(m&&m.display_name)||c, sw:sw(col), count:data.filter(s=>(s.boat_class||'').trim()===c).length});});
+  }else if(COLOUR_MODE==='racing'){
+    [['y','Yes'],['n','No']].forEach(([k,label])=>{const count=data.filter(s=>racingVal(s)===k).length; if(count) items.push({k, label, sw:sw(RACING_COLORS[k]), count});});
+  }else if(COLOUR_MODE==='owner'){
+    [...new Set(data.map(s=>(s.owner||'').trim()).filter(Boolean))].sort()
+      .forEach(o=>items.push({k:o.toLowerCase(), label:o, sw:sw(OWNER_COLORS[o]??0x7a8a99), count:data.filter(s=>(s.owner||'').trim()===o).length}));
+    const none=data.filter(s=>!(s.owner||'').trim()).length;
+    if(none) items.push({k:'(unassigned)', label:'(unassigned)', sw:sw(0x7a8a99), count:none});
   }
+  el.innerHTML = items.length
+    ? items.map(it=>`<div class="item${activeFilter!=null&&activeFilter!==it.k?' muted':''}" data-k="${esc(it.k)}">${it.sw}${esc(it.label)}${cnt(it.count)}</div>`).join('')
+    : '<div class="item" style="color:var(--muted)">No data</div>';
 }
 
 // Reposition slots + labels for 3D (stacked tiers) or Plan (split lanes).
@@ -689,11 +719,11 @@ function loadClasses(text){
   if(Object.keys(m).length){ CLASS_META=m; if(slotData.length) buildSlots(slotData); else renderLegend(); }
 }
 // colour-mode toggle (Status <-> Class)
-const bcs=document.getElementById('btnColStatus'), bcc=document.getElementById('btnColClass');
+const MODE_BTN={status:'btnColStatus', class:'btnColClass', racing:'btnColRacing', owner:'btnColOwner'};
 function setColourMode(mode){ COLOUR_MODE=mode; activeFilter=null;   // filter keys differ by mode -> clear
-  bcs.classList.toggle('active',mode==='status'); bcc.classList.toggle('active',mode==='class');
+  for(const k in MODE_BTN) document.getElementById(MODE_BTN[k]).classList.toggle('active', k===mode);
   if(slotData.length) buildSlots(slotData); else renderLegend(); }
-bcs.onclick=()=>setColourMode('status'); bcc.onclick=()=>setColourMode('class');
+for(const k in MODE_BTN) document.getElementById(MODE_BTN[k]).onclick=()=>setColourMode(k);
 // Click a legend row to isolate that status/class; click it again to show all.
 document.getElementById('legendItems').addEventListener('click',e=>{
   const it=e.target.closest('.item[data-k]'); if(!it) return;
