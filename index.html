@@ -68,8 +68,6 @@
   <div class="row">
     <button id="btnReset" style="flex:1">Reset camera</button>
   </div>
-  <label class="file" id="loadSlots">Load slots.csv<input id="csv" type="file" accept=".csv"></label>
-  <label class="file" id="loadClasses">Load classes.csv<input id="classcsv" type="file" accept=".csv"></label>
 </div>
 
 <div id="legend" class="panel">
@@ -660,13 +658,6 @@ function splitLine(l){
     else cur+=c;}
   out.push(cur); return out;
 }
-document.getElementById('csv').addEventListener('change',ev=>{
-  const f=ev.target.files[0]; if(!f) return;
-  const r=new FileReader();
-  r.onload=()=>{ try{ buildSlots(parseCSV(r.result)); hideInfo(); }
-    catch(err){ alert('Could not read CSV: '+err.message); } };
-  r.readAsText(f);
-});
 // classes.csv: class, display_name, colour, notes  (keyed by class, links to boat_class in slots)
 function loadClasses(text){
   const rows=parseCSV(text), m={};
@@ -674,12 +665,6 @@ function loadClasses(text){
     m[k]={display_name:(r.display_name||r.class).trim(), colour:hexColour(r.colour)}; }
   if(Object.keys(m).length){ CLASS_META=m; if(slotData.length) buildSlots(slotData); else renderLegend(); }
 }
-document.getElementById('classcsv').addEventListener('change',ev=>{
-  const f=ev.target.files[0]; if(!f) return;
-  const r=new FileReader();
-  r.onload=()=>{ try{ loadClasses(r.result); }catch(err){ alert('Could not read classes CSV: '+err.message); } };
-  r.readAsText(f);
-});
 // colour-mode toggle (Status <-> Class)
 const bcs=document.getElementById('btnColStatus'), bcc=document.getElementById('btnColClass');
 function setColourMode(mode){ COLOUR_MODE=mode; activeFilter=null;   // filter keys differ by mode -> clear
@@ -717,8 +702,6 @@ try{
 }catch(e){}
 const SLOTS_URL   = dataUrl    || 'slots.csv';
 const CLASSES_URL = classesUrl || 'classes.csv';
-// hide the manual Load buttons when a remote (Sheet) data source is in use
-if(dataUrl){ ['loadSlots','loadClasses'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';}); }
 // clean the long ?data=/?classes= noise out of the address bar
 try{ if(location.search && window.history && history.replaceState) history.replaceState(null,'',location.pathname); }catch(e){}
 fetch(SLOTS_URL).then(r=>r.ok?r.text():Promise.reject()).then(t=>{
