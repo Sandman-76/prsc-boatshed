@@ -66,11 +66,6 @@
     <button id="btnPlan">Plan view</button>
   </div>
   <div class="row">
-    <span style="align-self:center;color:var(--muted);font-size:12px;padding-right:2px">Colour</span>
-    <button id="btnColStatus" class="active" style="flex:1">Status</button>
-    <button id="btnColClass" style="flex:1">Class</button>
-  </div>
-  <div class="row">
     <button id="btnReset" style="flex:1">Reset camera</button>
   </div>
   <label class="file" id="loadSlots">Load slots.csv<input id="csv" type="file" accept=".csv"></label>
@@ -78,6 +73,10 @@
 </div>
 
 <div id="legend" class="panel">
+  <div class="row" style="margin-bottom:8px">
+    <button id="btnColStatus" class="active" style="flex:1">Status</button>
+    <button id="btnColClass" style="flex:1">Class</button>
+  </div>
   <div id="legendItems"></div>
   <div id="counts"></div>
 </div>
