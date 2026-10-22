@@ -511,6 +511,8 @@ function applyFilter(){
     setFaded(mesh, faded);
     if(mesh.userData.labelObj) setFaded(mesh.userData.labelObj, faded);
   }
+  // deselect the current bay if the filter now excludes it
+  if(hi && activeFilter!=null && filterKeyOf(hi.userData)!==activeFilter) hideInfo();
 }
 
 // Legend reflects the current colour mode (status colours, or the classes present).
