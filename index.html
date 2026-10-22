@@ -436,6 +436,7 @@ function buildSlots(data){
 
   for(const s of data){
     const rack=+s.rack, pos=+s.pos;
+    const bayW = Math.min(DIMS.boatBeam, 2*RACKS[rack-1].half/RACKS[rack-1].n);   // actual bay pitch -> pads don't overlap neighbours
     const p3=slotPosition(rack, pos, s.tier);
     const pp=planPosition(rack, pos, s.tier);
     const rotY=boatRot(rack,false);
@@ -455,19 +456,20 @@ function buildSlots(data){
     }else if(isNA){   // bay unavailable in current config
       const haz=new THREE.MeshStandardMaterial({map:hazardTexture(), roughness:.85, side:THREE.DoubleSide});
       if(s.tier==='upper'){                                            // raised tile on the shelf (keep thickness)
-        mesh=new THREE.Mesh(new THREE.BoxGeometry(DIMS.boatBeam*0.95,0.08,DIMS.boatLen*0.9), haz);
+        mesh=new THREE.Mesh(new THREE.BoxGeometry(bayW*0.9,0.08,DIMS.boatLen*0.9), haz);
         mesh.rotation.y=rotY;
       }else{                                                           // flat on the floor (no thickness)
-        const plane=new THREE.Mesh(new THREE.PlaneGeometry(DIMS.boatBeam*0.95,DIMS.boatLen*0.9), haz);
+        const plane=new THREE.Mesh(new THREE.PlaneGeometry(bayW*0.9,DIMS.boatLen*0.9), haz);
         plane.rotation.x=-Math.PI/2;
         mesh=new THREE.Group(); mesh.add(plane); mesh.rotation.y=rotY;
       }
     }else{   // vacant: faint footprint outline on the floor; the invisible box is the click target
-      mesh=new THREE.Mesh(new THREE.BoxGeometry(DIMS.boatBeam*0.9,0.02,DIMS.boatLen*0.9),
+      mesh=new THREE.Mesh(new THREE.BoxGeometry(bayW*0.9,0.02,DIMS.boatLen*0.9),
         new THREE.MeshBasicMaterial({visible:false}));
-      mesh.add(new THREE.Line(footprintGeo(DIMS.boatBeam*0.9,DIMS.boatLen*0.9),
-        new THREE.LineBasicMaterial({color:0x8aa0b4,transparent:true,opacity:0.5})));
-      mesh.rotation.y=rotY;
+      const fp=new THREE.Line(footprintGeo(bayW*0.9,DIMS.boatLen*0.9),
+        new THREE.LineBasicMaterial({color:0x8aa0b4,transparent:true,opacity:0.5}));
+      fp.raycast=()=>{};   // decorative outline must not catch clicks
+      mesh.add(fp); mesh.rotation.y=rotY;
     }
     // vacant/NA pads lie flush on their surface (floor for lower tier, shelf for upper), not at boat-centre height
     const isPad = isNA || !occupied;
@@ -617,10 +619,11 @@ function pick(e){
   const hits=ray.intersectObjects(slotMeshes,true);
   let solid=null, seeThru=null;
   for(const h of hits){
+    const hm=h.object.material;   // judge priority by the HIT geometry, not the walked-up proxy
+    const lowPri = hm && (hm.visible===false || (hm.transparent && hm.opacity!=null && hm.opacity<0.35));
     let o=h.object; while(o && slotMeshes.indexOf(o)<0) o=o.parent;
     if(!o) continue;
-    const m=o.material, faint = m && m.transparent && m.opacity!=null && m.opacity<0.35;
-    if(faint){ if(!seeThru) seeThru=o; continue; }
+    if(lowPri){ if(!seeThru) seeThru=o; continue; }   // invisible vacant box / faint pad -> only if nothing solid
     solid=o; break;
   }
   const sel=solid||seeThru;
