@@ -68,7 +68,7 @@
   <div class="row">
     <button id="btnReset" style="flex:1">Reset camera</button>
   </div>
-  <div class="row">
+  <div class="row" id="wallsRow" style="display:none">   <!-- hidden for now; walls off by default -->
     <button id="btnWalls" style="flex:1">Hide walls</button>
   </div>
 </div>
@@ -135,7 +135,7 @@ const classMeta = c => CLASS_META[(c||'').trim().toLowerCase()];
 function hexColour(s){ s=(s||'').trim().replace(/^#/,''); const n=parseInt(s,16); return (s.length>=3 && !isNaN(n))?n:null; }
 let COLOUR_MODE='status';   // 'status' | 'class'
 let activeFilter=null;      // isolated legend key (status/class), or null = show all
-let wallsVisible=true;      // Hide walls toggle also hides the roof (render loop respects this)
+let wallsVisible=false;     // walls+roof hidden by default (toggle respected by the render loop)
 function slotColour(s){
   if(COLOUR_MODE==='class'){ const m=classMeta(EFF_CLASS(s)); return (m && m.colour!=null)?m.colour:0x7a8a99; }
   return STATUS_COLORS[(s.status||'').toLowerCase()] ?? STATUS_COLORS.vacant;
@@ -717,6 +717,9 @@ document.getElementById('btnWalls').onclick=function(){
   this.textContent = wallsVisible ? 'Hide walls' : 'Show walls';
   this.classList.toggle('active', !wallsVisible);
 };
+// apply the default (walls + roof off)
+shell.traverse(o=>{ if(o.userData && o.userData.isWall) o.visible=wallsVisible; });
+document.getElementById('btnWalls').textContent = wallsVisible ? 'Hide walls' : 'Show walls';
 
 // ---------------- boot ----------------
 buildSlots((window.SAMPLE_SLOTS||[]).map(s=>({...s,bay:+s.bay})));
