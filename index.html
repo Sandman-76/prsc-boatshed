@@ -68,6 +68,9 @@
   <div class="row">
     <button id="btnReset" style="flex:1">Reset camera</button>
   </div>
+  <div class="row">
+    <button id="btnWalls" style="flex:1">Hide walls</button>
+  </div>
 </div>
 
 <div id="legend" class="panel">
@@ -286,7 +289,7 @@ const shell = new THREE.Group(); scene.add(shell);
   // walls as thin boxes (long walls + end walls up to eave)
   function wall(w,h,x,z,ry){
     const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,0.08),wallMat);
-    m.position.set(x,h/2,z); m.rotation.y=ry; shell.add(m);
+    m.position.set(x,h/2,z); m.rotation.y=ry; m.userData.isWall=true; shell.add(m);
   }
   wall(L,E, 0,-W/2,0); wall(L,E, 0, W/2,0);
   wall(W,E,-L/2,0,Math.PI/2); wall(W,E, L/2,0,Math.PI/2);
@@ -308,7 +311,7 @@ const shell = new THREE.Group(); scene.add(shell);
     sh.moveTo(-W/2,E); sh.lineTo(W/2,E); sh.lineTo(0,R); sh.lineTo(-W/2,E);
     const g=new THREE.ShapeGeometry(sh);
     const m=new THREE.Mesh(g,wallMat);
-    m.position.set(s*L/2,0,0); m.rotation.y=Math.PI/2; shell.add(m);
+    m.position.set(s*L/2,0,0); m.rotation.y=Math.PI/2; m.userData.isWall=true; shell.add(m);
   }
   // wireframe outline of the box for crispness
   const box=new THREE.LineSegments(
@@ -706,6 +709,14 @@ bp.onclick=()=>{planMode=true;bp.classList.add('active');b3.classList.remove('ac
   document.getElementById('hint').textContent='Top-down plan · tiers split · drag to pan · click a bay';setLayout(true);applyCamera();};
 document.getElementById('btnReset').onclick=()=>{
   target.set(0,1.5,0); theta=VIEW0.theta; phi=VIEW0.phi; radius=VIEW0.radius; applyCamera();};
+// show/hide the solid exterior walls (keeps the wireframe outline) to avoid clipping when viewing inside
+let wallsVisible=true;
+document.getElementById('btnWalls').onclick=function(){
+  wallsVisible=!wallsVisible;
+  shell.traverse(o=>{ if(o.userData && o.userData.isWall) o.visible=wallsVisible; });
+  this.textContent = wallsVisible ? 'Hide walls' : 'Show walls';
+  this.classList.toggle('active', !wallsVisible);
+};
 
 // ---------------- boot ----------------
 buildSlots((window.SAMPLE_SLOTS||[]).map(s=>({...s,bay:+s.bay})));
