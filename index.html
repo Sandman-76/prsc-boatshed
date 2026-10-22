@@ -355,8 +355,13 @@ const slotGroup = new THREE.Group(); scene.add(slotGroup);
 // flat rectangle outline (bay footprint, XZ plane) used for vacant markers; + glowing selection box
 function footprintGeo(w,l){ const hw=w/2,hl=l/2; return new THREE.BufferGeometry().setFromPoints([
   new THREE.Vector3(-hw,0,-hl),new THREE.Vector3(hw,0,-hl),new THREE.Vector3(hw,0,hl),new THREE.Vector3(-hw,0,hl),new THREE.Vector3(-hw,0,-hl)]); }
-const selBox=new THREE.BoxHelper(new THREE.Object3D(),0x66e0ff);
+const _selB3=new THREE.Box3();
+const selBox=new THREE.Box3Helper(_selB3,0x66e0ff);
 selBox.material.transparent=true; selBox.material.opacity=0.95; selBox.visible=false; scene.add(selBox);
+// tight AABB around the bay's VISIBLE geometry only (skips the invisible, mis-oriented GLB click proxy)
+function selectionBox(mesh){ mesh.updateWorldMatrix(true,true); _selB3.makeEmpty();
+  mesh.traverse(o=>{ if(!o.geometry) return; if(o.isMesh && o.material && o.material.visible===false) return; _selB3.expandByObject(o); });
+  if(_selB3.isEmpty()) _selB3.expandByObject(mesh); }
 const slotMeshes = [];           // for raycasting
 let slotData = [];
 
@@ -626,7 +631,7 @@ let hi=null;
 function highlight(mesh){
   if(hi) hi.scale.set(1,1,1);
   hi=mesh; mesh.scale.set(1.08,1.3,1.08);
-  selBox.setFromObject(mesh); selBox.visible=true;   // glowing outline around the selected bay
+  selectionBox(mesh); selBox.visible=true;   // glowing outline around the selected bay (visible geometry only)
 }
 function showInfo(s){
   const p=document.getElementById('info'); p.style.display='block';
