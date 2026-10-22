@@ -135,6 +135,7 @@ const classMeta = c => CLASS_META[(c||'').trim().toLowerCase()];
 function hexColour(s){ s=(s||'').trim().replace(/^#/,''); const n=parseInt(s,16); return (s.length>=3 && !isNaN(n))?n:null; }
 let COLOUR_MODE='status';   // 'status' | 'class'
 let activeFilter=null;      // isolated legend key (status/class), or null = show all
+let wallsVisible=true;      // Hide walls toggle also hides the roof (render loop respects this)
 function slotColour(s){
   if(COLOUR_MODE==='class'){ const m=classMeta(EFF_CLASS(s)); return (m && m.colour!=null)?m.colour:0x7a8a99; }
   return STATUS_COLORS[(s.status||'').toLowerCase()] ?? STATUS_COLORS.vacant;
@@ -709,11 +710,10 @@ bp.onclick=()=>{planMode=true;bp.classList.add('active');b3.classList.remove('ac
   document.getElementById('hint').textContent='Top-down plan · tiers split · drag to pan · click a bay';setLayout(true);applyCamera();};
 document.getElementById('btnReset').onclick=()=>{
   target.set(0,1.5,0); theta=VIEW0.theta; phi=VIEW0.phi; radius=VIEW0.radius; applyCamera();};
-// show/hide the solid exterior walls (keeps the wireframe outline) to avoid clipping when viewing inside
-let wallsVisible=true;
+// show/hide the solid exterior walls + roof (keeps the wireframe outline) to avoid clipping inside
 document.getElementById('btnWalls').onclick=function(){
   wallsVisible=!wallsVisible;
-  shell.traverse(o=>{ if(o.userData && o.userData.isWall) o.visible=wallsVisible; });
+  shell.traverse(o=>{ if(o.userData && o.userData.isWall) o.visible=wallsVisible; });   // roof handled in render loop
   this.textContent = wallsVisible ? 'Hide walls' : 'Show walls';
   this.classList.toggle('active', !wallsVisible);
 };
@@ -748,7 +748,7 @@ addEventListener('resize',()=>{
   if(window.ROOF_MAT){
     // phi: ~pi/2 = side/road view (roof solid) -> small = overhead (roof fades away)
     const op = planMode ? 0 : (0.04 + Math.min(1,Math.max(0,(phi-0.45)/0.40))*0.46);
-    window.ROOF_MAT.opacity=op; window.ROOF_MAT.visible=op>0.02;
+    window.ROOF_MAT.opacity=op; window.ROOF_MAT.visible = wallsVisible && op>0.02;   // hidden with the walls
   }
   renderer.render(scene,camera); })();
 </script>
